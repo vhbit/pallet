@@ -32,7 +32,7 @@
    Useful for testing."
   [session f]
   (binding [action-plan/*defining-context* (context/phase-contexts)]
-    (with-script-for-node (-> session :server)
+    (with-script-for-node (-> session :server) (-> session :plan-state)
       (let [phase (:phase session)
             _ (assert phase)
             [action-plan plan-state]
@@ -44,7 +44,7 @@
             (execute-action-plan
              (:service-state session)
              plan-state
-             (:environment (:environment session))
+             (:environment session)
              (:user session *admin-user*)
              echo-executor
              stop-execution-on-error
@@ -85,17 +85,18 @@
                     :os-version (or (-> session :server :image :os-version)
                                     "10.04")
                     :packager (or (-> session :group :packager)
-                                  (compute/packager
-                                   {:os-family
-                                    (or (-> session :server :image :os-family)
-                                        :ubuntu)}))
+                                  (compute/packager-for-os
+                                   (or (-> session :server :image :os-family)
+                                       :ubuntu)
+                                   nil))
                     :id (or (-> session :server :node-id) :id)
                     :is-64bit (get-in session [:is-64bit] true))))
         session (update-in session [:server] merge (:group session))
         session (update-in session [:service-state] #(or % [(:server session)]))
         session (update-in session [:plan-state action-options-key]
                            #(merge {:script-comments nil} %))
-        session (update-in session [:phase] #(or % :test-phase))]
+        session (update-in session [:phase] #(or % :test-phase))
+        session (update-in session [:environment :user] #(or % *admin-user*))]
     (add-session-verification-key session)))
 
 (defn build-actions*

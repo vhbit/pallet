@@ -349,9 +349,15 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                 {}
               (exec-checked-script
                "Package source"
+               ("apt-cache" show "python-software-properties" ">" "/dev/null")
                (~lib/install-package "python-software-properties")
-               (pipe (println) ("add-apt-repository" "ppa:abc"))
-               (~lib/update-package-list))))
+               (when
+                   (not
+                    (file-exists?
+                     "/etc/apt/sources.list.d/abc-$(lsb_release -c -s).list"))
+                 (chain-and
+                  (pipe (println) ("add-apt-repository" "ppa:abc"))
+                  (~lib/update-package-list))))))
            (first
             (build-actions
                 {:server {:image {:os-family :ubuntu :os-version "12.04"}}}
@@ -366,9 +372,15 @@ deb-src http://archive.ubuntu.com/ubuntu/ karmic main restricted"
                 {}
               (exec-checked-script
                "Package source"
+               ("apt-cache" show "software-properties-common" ">" "/dev/null")
                (~lib/install-package "software-properties-common")
-               (pipe (println) ("add-apt-repository" "ppa:abc"))
-               (~lib/update-package-list))))
+               (when
+                   (not
+                    (file-exists?
+                     "/etc/apt/sources.list.d/abc-$(lsb_release -c -s).list"))
+                 (chain-and
+                  (pipe (println) ("add-apt-repository" "ppa:abc"))
+                  (~lib/update-package-list))))))
            (first
             (build-actions
                 {:server {:image {:os-family :ubuntu :os-version "12.10"}}}

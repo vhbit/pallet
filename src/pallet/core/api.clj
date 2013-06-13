@@ -12,14 +12,13 @@
    [pallet.compute :refer [destroy-node destroy-nodes-in-group nodes run-nodes]]
    [pallet.core.api-impl :refer :all]
    [pallet.core.session :refer [session with-session]]
-   [pallet.core.user :refer [*admin-user*]]
+   [pallet.core.user :refer [obfuscated-passwords]]
    [pallet.executors :refer [default-executor]]
    [pallet.node :refer [id image-user primary-ip tag tag! taggable?]]
    [pallet.session.action-plan
     :refer [assoc-action-plan get-session-action-plan]]
    [pallet.session.verify :refer [add-session-verification-key check-session]]
-   [pallet.stevedore :refer [with-source-line-comments]]
-   [pallet.utils :refer [maybe-assoc maybe-update-in obfuscate]]))
+   [pallet.stevedore :refer [with-source-line-comments]]))
 
 (let [v (atom nil)]
   (defn version
@@ -53,16 +52,14 @@
   (fn action-plan [plan-state]
     (tracef "action-plan plan-state %s" plan-state)
     (let [s (with-session
-              (add-session-verification-key
-               (merge
-                {:user (:user environment *admin-user*)}
-                target-map
-                {:service-state service-state
-                 :plan-state plan-state
-                 :environment environment}))
-              (with-source-line-comments
-                (:script-comments (get-action-options))
-                (apply plan-fn args))
+                (add-session-verification-key
+                 (merge
+                  {:user (:user environment)}
+                  target-map
+                  {:service-state service-state
+                   :plan-state plan-state
+                   :environment environment}))
+              (apply plan-fn args)
               (check-session (session) '(plan-fn))
               (session))]
       (let [[action-plan session] (get-session-action-plan s)
@@ -86,16 +83,16 @@
   "Build action plans for the specified `phase` on all nodes or groups in the
   given `target`, within the context of the `service-state`. The `plan-state`
   contains all the settings, etc, for all groups."
-  (fn [service-state environment phase target]
+  (fn [service-state plan-state environment phase target]
     (tracef "target-action-plan %s" (:target-type target :node))
     (:target-type target :node)))
 
 (defmethod target-action-plan :node
-  [service-state environment phase target]
-  {:pre [target]}
+  [service-state plan-state environment phase target]
+  {:pre [target (:node target)]}
   (fn [plan-state]
     (logutils/with-context [:target (-> target :node primary-ip)]
-      (with-script-for-node target
+      (with-script-for-node target plan-state
         ((action-plan
           service-state environment
           (target-phase target phase) (phase-args phase)
@@ -103,7 +100,7 @@
          plan-state)))))
 
 (defmethod target-action-plan :group
-  [service-state environment phase group]
+  [service-state plan-state environment phase group]
   {:pre [group]}
   (fn [plan-state]
     (logutils/with-context [:target (-> group :group-name)]
@@ -114,7 +111,7 @@
        plan-state))))
 
 (defn action-plans
-  [service-state environment phase targets]
+  [service-state plan-state environment phase targets]
   (let [targets-with-phase (filter #(target-phase % phase) targets)]
     (tracef
      "action-plans: phase %s targets %s targets-with-phase %s"
@@ -123,7 +120,7 @@
       (domonad
        [action-plans
         (m-map
-         (partial target-action-plan service-state environment phase)
+         #(target-action-plan service-state plan-state environment phase %)
          targets-with-phase)]
        (map
         #(hash-map :target %1 :phase (phase-kw phase) :action-plan %2)
@@ -135,7 +132,9 @@
   "Returns execution settings based purely on the environment"
   []
   (fn [environment _]
-    {:user (:user environment *admin-user*)
+    (debugf "environment-execution-settings %s" environment)
+    (debugf "Env user %s" (obfuscated-passwords (:user environment)))
+    {:user (:user environment)
      :executor (get-in environment [:algorithms :executor] default-executor)
      :executor-status-fn (get-in environment [:algorithms :execute-status-fn]
                                  #'stop-execution-on-error)}))
@@ -148,10 +147,7 @@
           user (if (or (:private-key-path user) (:private-key user))
                  (assoc user :temp-key true)
                  user)]
-      (debugf "Image-user is %s"
-              (-> user
-                  (maybe-update-in [:password] obfuscate)
-                  (maybe-update-in [:sudo-password] obfuscate)))
+      (debugf "Image-user is %s" (obfuscated-passwords user))
       {:user user
        :executor (get-in environment [:algorithms :executor] default-executor)
        :executor-status-fn (get-in environment [:algorithms :execute-status-fn]
@@ -183,7 +179,7 @@
    {:keys [action-plan phase target-type target] :as action-plan-map}]
   (tracef "execute-action-plan :node")
   (logutils/with-context [:target (-> target :node primary-ip)]
-    (with-script-for-node target
+    (with-script-for-node target plan-state
       (execute-action-plan*
        {:server target
         :service-state service-state
@@ -291,7 +287,7 @@
    (fn [node] (assoc group :node node))
    (run-nodes
     compute-service group count
-    (:user environment *admin-user*)
+    (:user environment)
     nil
     (:provider-options environment nil))))
 
@@ -330,9 +326,11 @@
   [state-name]
   (fn [node]
     (debugf "has-state-flag %s %s" state-name (id (:node node)))
-    (get
-     (read-or-empty-map (tag (:node node) state-tag-name))
-     (keyword (name state-name)))))
+    (let [v (get
+             (read-or-empty-map (tag (:node node) state-tag-name))
+             (keyword (name state-name)))]
+      (tracef "has-state-flag %s" v)
+      v)))
 
 ;;; # Exception reporting
 (defn phase-errors

@@ -30,8 +30,7 @@
 
 ;;; node-spec contains loose schema, as these vary by, and should be enforced by
 ;;; the providers.
-(def-map-schema image-spec-schema
-  :loose
+(def-map-schema :loose image-spec-schema
   [(optional-path [:image-id]) [:or string? keyword?]
    (optional-path [:image-description-matches]) string?
    (optional-path [:image-name-matches]) string?
@@ -45,25 +44,29 @@
    (optional-path [:hypervisor-matches]) string?
    (optional-path [:override-login-user]) string?])
 
-(def-map-schema location-spec-schema
-  :loose
+(def-map-schema :loose location-spec-schema
   [(optional-path [:location-id]) string?])
 
-(def-map-schema hardware-spec-schema
-  :loose
+(def-map-schema :loose hardware-spec-schema
   [(optional-path [:hardware-id]) string?
    (optional-path [:min-ram]) number?
    (optional-path [:min-cores]) number?
    (optional-path [:min-disk]) number?])
 
-(def-map-schema network-spec-schema
-  :loose
-  [(optional-path [:inbound-ports]) (sequence-of number?)])
+(def-map-schema inbound-port-spec-schema
+  [[:start-port] number?
+   (optional-path [:end-port]) number?
+   (optional-path [:protocol]) string?])
 
-(def-map-schema qos-spec-schema
-  :loose
-  [(optional-path [:spot-price]) number?]
-  [(optional-path [:enable-monitoring]) any-value])
+(def inbound-port-schema
+  [:or inbound-port-spec-schema number?])
+
+(def-map-schema :loose network-spec-schema
+  [(optional-path [:inbound-ports]) (sequence-of inbound-port-schema)])
+
+(def-map-schema :loose qos-spec-schema
+  [(optional-path [:spot-price]) number?
+   (optional-path [:enable-monitoring]) any-value])
 
 (def-map-schema node-spec-schema
   [(optional-path [:image]) image-spec-schema
@@ -89,7 +92,8 @@
   [(optional-path [:phases]) phases-schema
    (optional-path [:roles]) (set-of keyword?)
    (optional-path [:packager]) keyword?
-   (optional-path [:phases-meta]) phases-meta-schema])
+   (optional-path [:phases-meta]) phases-meta-schema
+   (optional-path [:default-phases]) (sequence-of keyword?)])
 
 (def-map-schema group-spec-schema
   node-spec-schema
@@ -145,7 +149,8 @@
    (optional-path [:timeout-ms]) number?
    (optional-path [:timeout-val]) any-value
    (optional-path [:debug :script-comments]) any-value
-   (optional-path [:debug :script-trace]) any-value])
+   (optional-path [:debug :script-trace]) any-value
+   (optional-path [:os-detect]) any-value])
 
 (def-map-schema converge-options-schema
   lift-options-schema
